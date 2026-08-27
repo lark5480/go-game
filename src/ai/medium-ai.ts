@@ -6,6 +6,14 @@ let nextRequestId = 1;
 
 const supportsWorker = (): boolean => typeof Worker !== 'undefined';
 
+/** Terminates the Web Worker to free resources. Called when the game ends. */
+export const terminateWorker = (): void => {
+  if (worker) {
+    worker.terminate();
+    worker = undefined;
+  }
+};
+
 const searchInWorker = (
   board: Board,
   player: Player,
