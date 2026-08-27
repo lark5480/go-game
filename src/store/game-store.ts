@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { chooseAiMove } from '@/ai/ai-player';
+import { terminateWorker } from '@/ai/medium-ai';
 import { createBoard, cloneBoard } from '@/engine/board';
 import { legalMoveResult, hashBoard } from '@/engine/rules';
 import { scoreGame } from '@/engine/scoring';
@@ -201,9 +202,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (state.phase !== 'scoring') return;
     set({ phase: 'finished', score: state.score ?? scoreGame(state.board, state.deadStones) });
   },
-  returnToMenu: () => set({
-    phase: 'menu', board: createBoard(9), moves: [], deadStones: {}, score: undefined,
-  }),
+  returnToMenu: () => {
+    terminateWorker();
+    set({
+      phase: 'menu', board: createBoard(9), moves: [], deadStones: {}, score: undefined,
+    });
+  },
 }));
 
 const boardToRecord = (board: Board): StoneMap => {
@@ -304,7 +308,7 @@ const maybeRunAi = async (
   });
   if (aiRunToken !== runId) return;
   const latest = get();
-  if (latest.phase !== 'playing') {
+  if (latest.phase !== 'playing' || latest.currentPlayer === latest.humanPlayer) {
     set({ aiThinking: false });
     return;
   }
@@ -313,6 +317,12 @@ const maybeRunAi = async (
   // No legal move (or every move would repeat a known position) -> pass.
   if (!point || !result || hash === null || latest.positionHashes.has(hash)) {
     aiPass(set, get);
+    return;
+  }
+  // Final validation: ensure state hasn't changed during async operations
+  const finalState = get();
+  if (finalState.phase !== 'playing' || finalState.currentPlayer !== latest.currentPlayer) {
+    set({ aiThinking: false });
     return;
   }
   const mover = latest.currentPlayer;
