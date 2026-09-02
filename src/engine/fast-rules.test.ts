@@ -54,7 +54,7 @@ const randomSoup = (size: number, fillRatio: number, random: () => number): Boar
 
 const codeOf = (player: Player): number => (player === 'black' ? FLAT_BLACK : FLAT_WHITE);
 
-describe.each([9, 13])('fast rules parity on %ix%i', (size) => {
+describe.each([9, 13, 19])('fast rules parity on %ix%i', (size) => {
   const ctx = getFastContext(size);
 
   const expectParity = (board: Board) => {
@@ -135,13 +135,9 @@ describe.each([9, 13])('fast rules parity on %ix%i', (size) => {
               continue;
             }
             expect(applied).toBe(true);
-            for (let i = 0; i < size * size; i += 1) {
-              const cell = flat[i];
-              const expected = reference.board[Math.floor(i / size)][i % size];
-              const expectedCode =
-                expected === 'black' ? FLAT_BLACK : expected === 'white' ? FLAT_WHITE : FLAT_EMPTY;
-              expect(cell).toBe(expectedCode);
-            }
+            // One whole-board comparison instead of a per-cell assertion loop:
+            // the same coverage without a million expect() calls on 19x19.
+            expect(flat).toEqual(flatFromBoard(reference.board));
             // reset for the next probe
             flat.set(flatFromBoard(board));
           }

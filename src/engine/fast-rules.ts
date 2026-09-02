@@ -169,13 +169,17 @@ const resolveMove = (
   }
 
   // Own-group liberties are evaluated on the post-capture position, matching
-  // legalMoveResult's semantics (it inspects result.board).
+  // legalMoveResult's semantics (it inspects result.board). Only `measure`
+  // callers need the exact count; legality alone can stop at the first
+  // liberty. The capturedCount === 1 case keeps the exact count because the
+  // MCTS playouts use it for their simple-ko heuristic.
+  const exactLiberties = mode === 'measure' || capturedCount === 1;
   const measureLiberties = countGroupLiberties(
     ctx,
     flat,
     player,
     index,
-    mode === 'check', // pure legality probing can stop at the first liberty
+    !exactLiberties, // pure legality probing can stop at the first liberty
   );
   const legal = capturedCount > 0 || measureLiberties > 0;
 

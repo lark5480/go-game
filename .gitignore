@@ -6,6 +6,9 @@ dist/
 dist-ssr/
 *.local
 
+# EdgeOne Makers build artifacts
+.edgeone/
+
 # TypeScript incremental build info
 *.tsbuildinfo
 
@@ -30,6 +33,7 @@ lerna-debug.log*
 .vscode/*
 !.vscode/extensions.json
 .idea/
+.codebuddy/
 *.suo
 *.ntvs*
 *.njsproj

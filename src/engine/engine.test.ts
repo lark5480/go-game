@@ -58,7 +58,43 @@ describe('Chinese scoring', () => {
     ]);
     const dead: Record<string, 'white'> = { '3,0': 'white', '3,1': 'white', '3,2': 'white' };
     const score = scoreGame(board, dead);
-    expect(score.blackTerritory).toBeGreaterThanOrEqual(10);
+    // Left and right empty regions both border only the black wall: 10 + 10.
+    expect(score.blackStones).toBe(5);
+    expect(score.whiteStones).toBe(0);
+    expect(score.blackTerritory).toBe(20);
+    expect(score.blackPrisoners).toBe(0);
+    expect(score.whitePrisoners).toBe(3);
+    expect(score.blackScore).toBe(28);
+    expect(score.whiteScore).toBe(7.5);
     expect(score.winner).toBe('black');
+  });
+
+  it('scores seki-style shared regions for neither side', () => {
+    // A black ring wall encloses an eight-point region that also borders a
+    // white stone; neither side may count the shared region as territory.
+    const board = setStones(emptyBoard(5), [
+      ...Array.from({ length: 5 }, (_, x): [number, number, 'black'] => [x, 0, 'black']),
+      ...Array.from({ length: 5 }, (_, x): [number, number, 'black'] => [x, 4, 'black']),
+      ...Array.from({ length: 3 }, (_, y): [number, number, 'black'] => [0, y + 1, 'black']),
+      ...Array.from({ length: 3 }, (_, y): [number, number, 'black'] => [4, y + 1, 'black']),
+      [1, 1, 'white'],
+    ]);
+    const score = scoreGame(board);
+    expect(score.blackTerritory).toBe(0);
+    expect(score.whiteTerritory).toBe(0);
+    expect(score.blackStones).toBe(16);
+    expect(score.whiteStones).toBe(1);
+    expect(score.blackScore).toBe(16);
+    expect(score.whiteScore).toBe(8.5);
+    expect(score.winner).toBe('black');
+    expect(score.margin).toBe(7.5);
+  });
+
+  it('scores an empty board as a white win by komi', () => {
+    const score = scoreGame(emptyBoard(9));
+    expect(score.blackScore).toBe(0);
+    expect(score.whiteScore).toBe(7.5);
+    expect(score.winner).toBe('white');
+    expect(score.margin).toBe(7.5);
   });
 });

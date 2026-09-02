@@ -1,6 +1,7 @@
 import { GoBoard } from '@/components/Board/GoBoard';
 import { GameInfo } from '@/components/GameInfo/GameInfo';
 import { Controls } from '@/components/Controls/Controls';
+import { AiStatus } from '@/components/AiStatus/AiStatus';
 import { MainMenu } from '@/components/Menu/MainMenu';
 import { ResultModal } from '@/components/Modal/ResultModal';
 import { useGameStore } from '@/store/game-store';
@@ -8,6 +9,7 @@ import type { ScoreDetail } from '@/engine/types';
 
 export default function App() {
   const phase=useGameStore(s=>s.phase);
+  const aiThinking=useGameStore(s=>s.aiThinking);
   const enterScoring=useGameStore(s=>s.enterScoring);
   const confirmScore=useGameStore(s=>s.confirmScore);
   const score=useGameStore(s=>s.score as ScoreDetail|undefined);
@@ -26,8 +28,9 @@ export default function App() {
                   <p className="mt-1">白 {score.whiteScore.toFixed(1)} ＝ 存子 {score.whiteStones} ＋ 地 {score.whiteTerritory} {score.whitePrisoners>0?`＋ 提获黑子 ${score.whitePrisoners}`:''} ＋ 贴 7.5</p>
                 </div>
               )}
+              <AiStatus/>
               <Controls/>
-              {phase==='playing'&&<button className="w-full rounded-xl bg-amber-500 py-3 font-semibold text-black" onClick={()=>{enterScoring();confirmScore();}}>直接终局计算</button>}
+              {phase==='playing'&&<button className="w-full rounded-xl bg-amber-500 py-3 font-semibold text-black disabled:opacity-40 disabled:cursor-not-allowed" disabled={aiThinking} onClick={()=>{enterScoring();confirmScore();}}>直接终局计算</button>}
               {phase==='scoring'&&<button className="w-full rounded-xl bg-emerald-500 py-3 font-semibold text-black" onClick={confirmScore}>确认结果</button>}
               <button className="w-full rounded-xl border border-white/10 py-3 hover:bg-white/10" onClick={useGameStore.getState().returnToMenu}>返回菜单</button>
             </aside>

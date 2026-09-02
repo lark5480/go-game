@@ -4,6 +4,7 @@ export const ResultModal = () => {
   const phase = useGameStore(s => s.phase); const score = useGameStore(s => s.score);
   const resigner = useGameStore(s => s.resigner); const returnToMenu = useGameStore(s => s.returnToMenu);
   const startGame = useGameStore(s => s.startGame);
+  const lastConfig = useGameStore(s => s.lastConfig);
   if (phase !== 'finished') return null;
   const winner = resigner ? (resigner === 'black' ? 'white' : 'black') : score?.winner;
   return (
@@ -22,7 +23,7 @@ export const ResultModal = () => {
         {!score && resigner && <p className="mt-4 text-white/70">{resigner === 'black' ? '黑' : '白'}方认输</p>}
         <div className="mt-8 grid grid-cols-2 gap-3">
           <button className="rounded-xl bg-white/10 py-3" onClick={returnToMenu}>主菜单</button>
-          <button className="rounded-xl bg-emerald-500 py-3 font-semibold text-black" onClick={() => startGame({})}>再来一局</button>
+          <button className="rounded-xl bg-emerald-500 py-3 font-semibold text-black" onClick={() => startGame(lastConfig)}>再来一局</button>
         </div>
       </div>
     </div>
