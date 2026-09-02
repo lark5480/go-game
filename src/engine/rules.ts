@@ -1,4 +1,4 @@
-import { captureOpponentsIfNeeded, cloneBoard, createBoard, groupInfo, inBounds } from './board';
+import { captureOpponentsIfNeeded, cloneBoard, groupInfo, inBounds } from './board';
 import { opponent } from './types';
 import type { Board, MoveResult, Player, Point } from './types';
 
@@ -26,7 +26,9 @@ export const hashBoard = (() => {
         if (value === 'empty') continue;
         const random = table[(y * size + x) * 2 + (value === 'white' ? 1 : 0)];
         low ^= random;
-        high ^= random * 2654435761;
+        // imul keeps the exact low 32 bits of the product; the float product
+        // used before lost them and needlessly weakened the high word.
+        high ^= Math.imul(random, 2654435761);
       }
     }
     return `${high.toString(36)}:${low.toString(36)}`;
@@ -43,33 +45,3 @@ export const legalMoveResult = (input: Board, player: Player, point: Point): Mov
   if (ownGroup.liberties.size === 0 && captured.length === 0) return null;
   return { board, captured, nextPlayer: opponent(player) };
 };
-
-export class RuleState {
-  readonly size: number;
-  board: Board;
-  currentPlayer: Player;
-  positionHashes: Set<string>;
-
-  constructor(
-    size: number,
-    board = createBoard(size),
-    currentPlayer: Player = 'black',
-    positionHashes?: Set<string>,
-  ) {
-    this.size = size;
-    this.board = board;
-    this.currentPlayer = currentPlayer;
-    this.positionHashes = positionHashes ?? new Set([hashBoard(board)]);
-  }
-
-  play(point: Point): MoveResult | null {
-    const result = legalMoveResult(this.board, this.currentPlayer, point);
-    if (!result) return null;
-    const hash = hashBoard(result.board);
-    if (this.positionHashes.has(hash)) return null;
-    this.board = result.board;
-    this.currentPlayer = result.nextPlayer;
-    this.positionHashes.add(hash);
-    return result;
-  }
-}

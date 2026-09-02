@@ -16,9 +16,21 @@ export interface GameConfig {
   difficulty: AiDifficulty;
 }
 
+export interface LoadRecordInput {
+  boardSize: 9 | 13 | 19;
+  /** Starting position; handicap stones live here because they are not moves. */
+  initialBoard: Board;
+  moves: GameMove[];
+  warnings?: string[];
+}
+
 interface GameState extends GameConfig {
   phase: GamePhase;
   board: Board;
+  /** Position the game started from; handicap stones live here, not in `moves`. */
+  initialBoard: Board;
+  /** Side that opens the game; usually black, but white after handicap stones. */
+  firstPlayer: Player;
   currentPlayer: Player;
   moves: GameMove[];
   capturedByBlack: number;
@@ -29,6 +41,8 @@ interface GameState extends GameConfig {
   deadStones: StoneMap;
   score?: ScoreDetail;
   resigner?: Player;
+  /** Config of the most recent game; "再来一局" replays it verbatim. */
+  lastConfig: GameConfig;
   aiThinking: boolean;
   message: string;
   startGame: (config: Partial<GameConfig>) => void;
@@ -40,9 +54,10 @@ interface GameState extends GameConfig {
   toggleDeadStone: (point: Point) => void;
   confirmScore: () => void;
   returnToMenu: () => void;
+  loadRecord: (input: LoadRecordInput) => void;
 }
 
-const initialBoard = createBoard(9);
+const emptyMenuBoard = createBoard(9);
 const defaultConfig: GameConfig = {
   mode: 'ai',
   boardSize: 9,
@@ -51,25 +66,31 @@ const defaultConfig: GameConfig = {
 };
 
 const restoreState = (
-  config: GameConfig,
   moves: GameMove[],
+  initialBoard: Board,
+  firstPlayer: Player,
 ): Pick<GameState, 'board' | 'currentPlayer' | 'capturedByBlack' | 'capturedByWhite' | 'positionHashes' | 'consecutivePasses' | 'lastMove'> => {
-  const board = moves.length > 0 ? cloneBoard(moves[moves.length - 1].boardAfter) : createBoard(config.boardSize);
-  let player: Player = 'black';
+  const board = moves.length > 0
+    ? cloneBoard(moves[moves.length - 1].boardAfter)
+    : cloneBoard(initialBoard);
   const captures = { black: 0, white: 0 };
-  const hashes = new Set<string>([hashBoard(createBoard(config.boardSize))]);
+  const hashes = new Set<string>([hashBoard(initialBoard)]);
   for (let index = 0; index < moves.length; index += 1) {
     const move = moves[index];
     if (move.kind === 'stone') {
       captures[move.player] += move.captures.length;
       hashes.add(hashBoard(move.boardAfter));
     }
-    player = opponent(player);
   }
   const stoneMoves = [...moves].reverse().find((move) => move.kind === 'stone');
+  // Derive the turn from the last move rather than counting from black: a
+  // handicap record opens with a white move, which the old count got wrong.
+  // With no moves left the turn falls back to whoever opened, so undoing a
+  // handicap game back to its start hands the move to white again.
+  const lastPlayer = moves.length > 0 ? moves[moves.length - 1].player : undefined;
   return {
     board,
-    currentPlayer: player,
+    currentPlayer: lastPlayer === undefined ? firstPlayer : opponent(lastPlayer),
     capturedByBlack: captures.black,
     capturedByWhite: captures.white,
     positionHashes: hashes,
@@ -81,14 +102,17 @@ const restoreState = (
 export const useGameStore = create<GameState>((set, get) => ({
   ...defaultConfig,
   phase: 'menu',
-  board: initialBoard,
+  board: emptyMenuBoard,
+  initialBoard: emptyMenuBoard,
+  firstPlayer: 'black',
   currentPlayer: 'black',
   moves: [],
   capturedByBlack: 0,
   capturedByWhite: 0,
-  positionHashes: new Set([hashBoard(initialBoard)]),
+  positionHashes: new Set([hashBoard(emptyMenuBoard)]),
   consecutivePasses: 0,
   deadStones: {},
+  lastConfig: { ...defaultConfig },
   aiThinking: false,
   message: '',
   startGame: (config) => {
@@ -99,6 +123,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         ...next,
         phase: 'playing',
         board,
+        initialBoard: board,
+        firstPlayer: 'black',
         currentPlayer: 'black',
         moves: [],
         capturedByBlack: 0,
@@ -108,6 +134,12 @@ export const useGameStore = create<GameState>((set, get) => ({
         deadStones: {},
         score: undefined,
         resigner: undefined,
+        lastConfig: {
+          mode: next.mode,
+          boardSize: next.boardSize,
+          humanPlayer: next.humanPlayer,
+          difficulty: next.difficulty,
+        },
         aiThinking: false,
         message: '',
       };
@@ -153,6 +185,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       kind: 'pass', player: state.currentPlayer, captures: [], boardAfter: cloneBoard(state.board),
     }];
     if (passes >= 2) {
+      terminateWorker();
       set({ moves: nextMoves, currentPlayer: opponent(state.currentPlayer), consecutivePasses: passes, phase: 'scoring', deadStones: {}, score: undefined });
       return;
     }
@@ -163,6 +196,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   resign: () => {
     const state = get();
     if (state.phase !== 'playing') return;
+    terminateWorker();
     set({ phase: 'finished', resigner: state.currentPlayer, message: '' });
   },
   undo: () => {
@@ -172,7 +206,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (state.mode === 'ai' && state.moves[state.moves.length - 1].player !== state.humanPlayer) count = 2;
     else if (state.moves.length > 1 && state.moves[state.moves.length - 1].player === state.humanPlayer && state.moves[state.moves.length - 2].player !== state.humanPlayer) count = 2;
     const restoredMoves = state.moves.slice(0, Math.max(0, state.moves.length - count));
-    set({ ...restoreState({ ...state }, restoredMoves), moves: restoredMoves, phase: 'playing', score: undefined });
+    set({
+      ...restoreState(restoredMoves, state.initialBoard, state.firstPlayer),
+      moves: restoredMoves,
+      phase: 'playing',
+      score: undefined,
+    });
     void maybeRunAi(set, get);
   },
   enterScoring: () => {
@@ -200,12 +239,48 @@ export const useGameStore = create<GameState>((set, get) => ({
   confirmScore: () => {
     const state = get();
     if (state.phase !== 'scoring') return;
+    terminateWorker();
     set({ phase: 'finished', score: state.score ?? scoreGame(state.board, state.deadStones) });
   },
   returnToMenu: () => {
     terminateWorker();
     set({
-      phase: 'menu', board: createBoard(9), moves: [], deadStones: {}, score: undefined,
+      phase: 'menu',
+      board: emptyMenuBoard,
+      initialBoard: emptyMenuBoard,
+      moves: [],
+      deadStones: {},
+      score: undefined,
+    });
+  },
+  // Imported records continue in local two-player mode: a loaded game is a
+  // recording to review, so neither side should be driven by the AI.
+  loadRecord: ({ boardSize, initialBoard, moves, warnings }) => {
+    terminateWorker();
+    const config: GameConfig = {
+      mode: 'pvp',
+      boardSize,
+      humanPlayer: 'black',
+      difficulty: get().difficulty,
+    };
+    // Whoever played the first move opened the game: white opens a handicap
+    // record, so undoing back to the start has to hand the move back to white.
+    const firstPlayer: Player = moves.length > 0 ? moves[0].player : 'black';
+    set({
+      ...config,
+      phase: 'playing',
+      initialBoard: cloneBoard(initialBoard),
+      firstPlayer,
+      ...restoreState(moves, initialBoard, firstPlayer),
+      moves,
+      deadStones: {},
+      score: undefined,
+      resigner: undefined,
+      lastConfig: { ...config },
+      aiThinking: false,
+      message: warnings && warnings.length > 0
+        ? warnings.join('；')
+        : `已导入棋谱，共 ${moves.length} 手`,
     });
   },
 }));
@@ -259,6 +334,7 @@ const aiPass = (
     kind: 'pass', player: latest.currentPlayer, captures: [], boardAfter: cloneBoard(latest.board),
   }];
   if (passes >= 2) {
+    terminateWorker();
     set({
       moves: nextMoves,
       currentPlayer: nextPlayer,
@@ -288,55 +364,73 @@ const maybeRunAi = async (
 ): Promise<void> => {
   const runId = ++aiRunToken;
   const state = get();
-  if (state.phase !== 'playing' || state.mode !== 'ai' || state.currentPlayer === state.humanPlayer) return;
+  if (state.phase !== 'playing' || state.mode !== 'ai' || state.currentPlayer === state.humanPlayer) {
+    // No longer an AI turn (e.g. undo landed back on the human's side while a
+    // search was pending): drop a stale thinking flag or the UI stays locked.
+    if (state.aiThinking) set({ aiThinking: false });
+    return;
+  }
   set({ aiThinking: true });
-  await new Promise((resolve) => window.setTimeout(resolve, 150));
-  if (aiRunToken !== runId) return;
-  const current = get();
-  if (current.phase !== 'playing') {
-    set({ aiThinking: false });
-    return;
-  }
-  // The human just passed -> answer with a pass so the game always reaches
-  // scoring instead of drifting on forever.
-  if (current.consecutivePasses >= 1) {
-    aiPass(set, get);
-    return;
-  }
-  const point = await chooseAiMove(current.board, current.currentPlayer, current.difficulty, {
-    positionHashes: current.positionHashes,
-  });
-  if (aiRunToken !== runId) return;
-  const latest = get();
-  if (latest.phase !== 'playing' || latest.currentPlayer === latest.humanPlayer) {
-    set({ aiThinking: false });
-    return;
-  }
-  const result = point ? legalMoveResult(latest.board, latest.currentPlayer, point) : null;
-  const hash = result ? hashBoard(result.board) : null;
-  // No legal move (or every move would repeat a known position) -> pass.
-  if (!point || !result || hash === null || latest.positionHashes.has(hash)) {
-    aiPass(set, get);
-    return;
-  }
+  try {
+    await new Promise((resolve) => window.setTimeout(resolve, 150));
+    if (aiRunToken !== runId) return;
+    const current = get();
+    if (current.phase !== 'playing') {
+      set({ aiThinking: false });
+      return;
+    }
+    // The human just passed -> answer with a pass so the game always reaches
+    // scoring instead of drifting on forever.
+    if (current.consecutivePasses >= 1) {
+      aiPass(set, get);
+      return;
+    }
+    let point: Point | null;
+    try {
+      point = await chooseAiMove(current.board, current.currentPlayer, current.difficulty, {
+        positionHashes: current.positionHashes,
+      });
+    } catch {
+      // A failing AI layer (e.g. Worker construction blocked by CSP) must never
+      // wedge the game: treat it like "no move found" and pass.
+      point = null;
+    }
+    if (aiRunToken !== runId) return;
+    const latest = get();
+    if (latest.phase !== 'playing' || latest.currentPlayer === latest.humanPlayer) {
+      set({ aiThinking: false });
+      return;
+    }
+    const result = point ? legalMoveResult(latest.board, latest.currentPlayer, point) : null;
+    const hash = result ? hashBoard(result.board) : null;
+    // No legal move (or every move would repeat a known position) -> pass.
+    if (!point || !result || hash === null || latest.positionHashes.has(hash)) {
+      aiPass(set, get);
+      return;
+    }
   // Final validation: ensure state hasn't changed during async operations
-  const finalState = get();
-  if (finalState.phase !== 'playing' || finalState.currentPlayer !== latest.currentPlayer) {
-    set({ aiThinking: false });
-    return;
+    const finalState = get();
+    if (finalState.phase !== 'playing' || finalState.currentPlayer !== latest.currentPlayer) {
+      set({ aiThinking: false });
+      return;
+    }
+    const mover = latest.currentPlayer;
+    set({
+      board: result.board,
+      currentPlayer: result.nextPlayer,
+      moves: [...latest.moves, { kind: 'stone', player: mover, point, captures: result.captured, boardAfter: result.board }],
+      positionHashes: new Set(latest.positionHashes).add(hash),
+      consecutivePasses: 0,
+      lastMove: point,
+      aiThinking: false,
+      ...(mover === 'black'
+        ? { capturedByBlack: latest.capturedByBlack + result.captured.length }
+        : { capturedByWhite: latest.capturedByWhite + result.captured.length }),
+      message: '',
+    });
+  } finally {
+    // Last-resort cleanup: every normal path clears the flag itself; this
+    // guarantees it stays off even if a future early return is added.
+    if (aiRunToken === runId && get().aiThinking) set({ aiThinking: false });
   }
-  const mover = latest.currentPlayer;
-  set({
-    board: result.board,
-    currentPlayer: result.nextPlayer,
-    moves: [...latest.moves, { kind: 'stone', player: mover, point, captures: result.captured, boardAfter: result.board }],
-    positionHashes: new Set(latest.positionHashes).add(hash),
-    consecutivePasses: 0,
-    lastMove: point,
-    aiThinking: false,
-    ...(mover === 'black'
-      ? { capturedByBlack: latest.capturedByBlack + result.captured.length }
-      : { capturedByWhite: latest.capturedByWhite + result.captured.length }),
-    message: '',
-  });
 };

@@ -88,9 +88,8 @@ describe('MCTS search', () => {
     const search = new MCTS(board, 'black', { random: mulberry32(7) });
     search.run(60, 300);
     const move = search.best();
-    if (move) {
-      expect(legalMoveResult(board, 'black', move)).not.toBeNull();
-    }
+    expect(move).not.toBeNull();
+    expect(legalMoveResult(board, 'black', move!)).not.toBeNull();
   });
 
   it('returns null when no move has been explored', () => {

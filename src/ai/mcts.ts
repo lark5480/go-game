@@ -62,11 +62,11 @@ export class MCTS {
 
   /* reusable playout scratch */
   private playoutBuf!: Uint8Array;
-  private nearList!: Int32Array;
-  private nearStamp!: Int32Array;
+  /** Empty points within distance 2 of a stone, as a compact live set. */
   private candidateBuf!: Int32Array;
-  private nearGeneration = 0;
-  private nearCount = 0;
+  /** candidateBuf index per point, -1 when not a candidate; O(1) membership. */
+  private candidatePos!: Int32Array;
+  private candidateCount = 0;
 
   constructor(board: GridBoard, aiPlayer: Player, options: MctsOptions & { exploration?: number } = {}) {
     this.random = options.random ?? Math.random;
@@ -79,10 +79,9 @@ export class MCTS {
     this.size = board.length;
     this.ctx = getFastContext(this.size);
     this.playoutBuf = new Uint8Array(this.size * this.size);
-    this.nearList = new Int32Array(this.size * this.size);
-    this.nearStamp = new Int32Array(this.size * this.size);
     this.candidateBuf = new Int32Array(this.size * this.size);
-    this.nearGeneration = 0;
+    this.candidatePos = new Int32Array(this.size * this.size);
+    this.candidateCount = 0;
 
     const aiCode = aiPlayer === 'black' ? FLAT_BLACK : FLAT_WHITE;
     const root: Node = {
@@ -116,7 +115,9 @@ export class MCTS {
     this.root = root;
   }
 
-  run(durationMs: number, maxIterations = 500): void {
+  /** Wall time is the real budget; maxIterations only guards against a runaway
+   *  loop (e.g. a broken timer), so default generously high. */
+  run(durationMs: number, maxIterations = 100_000): void {
     const startedAt = performance.now();
     while (performance.now() - startedAt < durationMs && this.root.visits < maxIterations) {
       let node = this.root;
@@ -190,13 +191,19 @@ export class MCTS {
 
   private selectChild(node: Node): Node {
     const logParentVisits = Math.log(Math.max(1, node.visits));
-    return node.children.reduce((best, child) => {
-      const bestScore = best.reward / best.visits +
-        this.exploration * Math.sqrt(logParentVisits / best.visits);
-      const score = child.reward / child.visits +
-        this.exploration * Math.sqrt(logParentVisits / child.visits);
-      return score > bestScore ? child : best;
-    });
+    let best = node.children[0];
+    let bestScore =
+      best.reward / best.visits + this.exploration * Math.sqrt(logParentVisits / best.visits);
+    for (let i = 1; i < node.children.length; i += 1) {
+      const child = node.children[i];
+      const score =
+        child.reward / child.visits + this.exploration * Math.sqrt(logParentVisits / child.visits);
+      if (score > bestScore) {
+        best = child;
+        bestScore = score;
+      }
+    }
+    return best;
   }
 
   /**
@@ -204,13 +211,16 @@ export class MCTS {
    * stone count with 7.5 komi — identical outcome semantics to the previous
    * implementation, just without whole-board clones at every step. Simple-ko
    * recaptures are banned and a hard step cap guarantees termination.
+   *
+   * The candidate set (empty points within distance 2 of a stone) is kept as a
+   * compact live list updated in O(1) per move, so no per-step rescan is needed.
    */
   private simulate(startBoard: Uint8Array, startPlayer: number): number {
     if (this.isEmptyBoard(startBoard)) return this.random() < .5 ? 1 : 0;
 
     const flat = this.playoutBuf;
     flat.set(startBoard);
-    this.rebuildNearList(flat);
+    this.rebuildCandidates(flat);
 
     let player = startPlayer;
     let passCount = 0;
@@ -224,20 +234,18 @@ export class MCTS {
 
     while (passCount < 2 && steps < maxSteps) {
       steps += 1;
-      let candidateCount = 0;
-      for (let i = 0; i < this.nearCount; i += 1) {
-        const point = this.nearList[i];
-        if (flat[point] === FLAT_EMPTY) this.candidateBuf[candidateCount++] = point;
-      }
 
       let played = -1;
       // Lazy partial shuffle: try candidates in random order, each at most once.
-      for (let remaining = candidateCount; remaining > 0; remaining -= 1) {
+      for (let remaining = this.candidateCount; remaining > 0; remaining -= 1) {
         const pick = Math.floor(this.random() * remaining);
         const swap = remaining - 1;
         const picked = this.candidateBuf[pick];
-        this.candidateBuf[pick] = this.candidateBuf[swap];
+        const swapped = this.candidateBuf[swap];
+        this.candidateBuf[pick] = swapped;
         this.candidateBuf[swap] = picked;
+        this.candidatePos[picked] = swap;
+        this.candidatePos[swapped] = pick;
         if (picked === koPoint && player === koForbidden) continue;
         if (tryApplyMove(this.ctx, flat, player, picked)) {
           played = picked;
@@ -257,9 +265,10 @@ export class MCTS {
         } else {
           koPoint = -1;
         }
-        this.extendNearListAround(played);
+        this.removeCandidate(played);
+        this.extendCandidatesAround(played);
         for (let c = 0; c < this.ctx.capturedCount; c += 1) {
-          this.extendNearListAround(this.ctx.capturedBuf[c]);
+          this.extendCandidatesAround(this.ctx.capturedBuf[c]);
         }
       }
       player = player === FLAT_BLACK ? FLAT_WHITE : FLAT_BLACK;
@@ -298,21 +307,36 @@ export class MCTS {
     return false;
   }
 
-  private rebuildNearList(flat: Uint8Array): void {
-    this.nearGeneration += 1;
-    this.nearCount = 0;
-    const generation = this.nearGeneration;
+  private rebuildCandidates(flat: Uint8Array): void {
+    this.candidateCount = 0;
+    // Positions are only valid within the current playout: stale entries from
+    // the previous playout must not survive the membership check.
+    this.candidatePos.fill(-1);
     for (let index = 0; index < this.ctx.total; index += 1) {
       if (flat[index] !== FLAT_EMPTY) continue;
-      if (this.isNearStone(flat, index)) {
-        this.nearStamp[index] = generation;
-        this.nearList[this.nearCount++] = index;
-      }
+      if (!this.isNearStone(flat, index)) continue;
+      this.candidatePos[index] = this.candidateCount;
+      this.candidateBuf[this.candidateCount++] = index;
     }
   }
 
-  /** Adds newly-empty points around a changed cell (deduplicated per playout). */
-  private extendNearListAround(index: number): void {
+  /** O(1) swap-remove of a candidate that just got occupied. */
+  private removeCandidate(index: number): void {
+    const position = this.candidatePos[index];
+    if (position < 0) return;
+    const last = this.candidateCount - 1;
+    this.candidateCount = last;
+    this.candidatePos[index] = -1;
+    if (position === last) return;
+    const moved = this.candidateBuf[last];
+    this.candidateBuf[position] = moved;
+    this.candidatePos[moved] = position;
+  }
+
+  /** Adds empty points around a changed cell (played stone or freed capture)
+   *  that are near a stone and not yet candidates; deduplicated via
+   *  candidatePos. */
+  private extendCandidatesAround(index: number): void {
     const size = this.size;
     const flat = this.playoutBuf;
     const x = index % size;
@@ -325,10 +349,10 @@ export class MCTS {
         if (nx < 0 || nx >= size) continue;
         const neighbour = ny * size + nx;
         if (flat[neighbour] !== FLAT_EMPTY) continue;
-        if (this.nearStamp[neighbour] === this.nearGeneration) continue;
+        if (this.candidatePos[neighbour] >= 0) continue;
         if (!this.isNearStone(flat, neighbour)) continue;
-        this.nearStamp[neighbour] = this.nearGeneration;
-        if (this.nearCount < this.nearList.length) this.nearList[this.nearCount++] = neighbour;
+        this.candidatePos[neighbour] = this.candidateCount;
+        this.candidateBuf[this.candidateCount++] = neighbour;
       }
     }
   }

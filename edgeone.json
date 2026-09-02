@@ -1,0 +1,7 @@
+{
+  "name": "go-game",
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm build",
+  "outputDirectory": "dist",
+  "nodeVersion": "22.21.1"
+}
