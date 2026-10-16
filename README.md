@@ -73,8 +73,6 @@ src/
 ├── components/        # UI 组件（Board / Menu / GameInfo / Controls / Modal / AiStatus）
 ├── hooks/
 │   └── use-sound.ts   # 共享 AudioContext 的音效 Hook
-├── utils/
-│   └── format.ts      # 计分格式化辅助
 ├── main.tsx           # 应用入口
 └── App.tsx            # 页面布局
 ```
