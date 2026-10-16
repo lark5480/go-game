@@ -38,8 +38,10 @@
    模板见 `docs/open-source-go-ecosystem-analysis.md`（过程档案）与
    `docs/ecosystem-brief.md`（行动版 backlog）。
 2. **小改动**：在动代码前，用 1–2 段话和用户对齐"做什么、为什么、不做什么"。
+3. **改代码同步改文档**：目录结构、命令、架构说明变更后同步更新 README / AGENTS.md；
+   backlog 有进展时更新 `docs/ecosystem-brief.md` 的状态列。
 
-Agent **不允许**跳过这两步直接启动"大重构"或"加新功能"。
+Agent **不允许**跳过前两步直接启动"大重构"或"加新功能"。
 
 ---
 
