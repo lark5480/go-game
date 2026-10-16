@@ -58,20 +58,22 @@ src/
 │   ├── parse.ts       #   FF[4] 解析器：转义处理、CA 字符集、规范违例告警
 │   ├── serialize.ts   #   序列化（值原样写回，往返无损）
 │   ├── record.ts      #   棋谱 ↔ 对局：导入重放、导出构建
-│   ├── sgf.test.ts    #   兼容性测试套件（坐标/pass/矩形/编码/往返）
-│   └── record.test.ts #   导入导出测试（让子/拒绝策略/往返一致）
+│   └── *.test.ts      #   兼容性测试 + 导入导出测试（让子/拒绝策略/往返）
 ├── ai/                # AI 玩家
 │   ├── ai-player.ts   #   难度分发入口
 │   ├── easy-ai.ts     #   初级启发式
 │   ├── medium-ai.ts   #   中级入口（Worker 调度 + 超时回退）
 │   ├── ai-status.ts   #   降级事件发布订阅（不依赖 store）
 │   ├── mcts.ts        #   UCT 蒙特卡洛树搜索
-│   └── search-worker.ts # Web Worker 入口
+│   ├── search-worker.ts # Web Worker 入口
+│   └── *.test.ts      #   AI 单测 + 回归测试
 ├── store/
-│   └── game-store.ts  # Zustand 全局状态：回合流转、历史、superko、AI 调度
-├── components/        # UI 组件（Board / Menu / GameInfo / Controls / Modal）
+│   ├── game-store.ts  # Zustand 全局状态：回合流转、历史、superko、AI 调度
+│   └── *.test.ts      #   状态流转 + 棋谱加载测试
+├── components/        # UI 组件（Board / Menu / GameInfo / Controls / Modal / AiStatus）
 ├── hooks/
 │   └── use-sound.ts   # 共享 AudioContext 的音效 Hook
+├── main.tsx           # 应用入口
 └── App.tsx            # 页面布局
 ```
 

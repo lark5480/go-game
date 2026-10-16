@@ -116,6 +116,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   aiThinking: false,
   message: '',
   startGame: (config) => {
+    aiRunToken += 1;
     set((state) => {
       const next = { ...state, ...defaultConfig, ...config };
       const board = createBoard(next.boardSize);
@@ -243,6 +244,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({ phase: 'finished', score: state.score ?? scoreGame(state.board, state.deadStones) });
   },
   returnToMenu: () => {
+    aiRunToken += 1;
     terminateWorker();
     set({
       phase: 'menu',
