@@ -81,9 +81,9 @@ src/
 
 ### 规则引擎：参考实现 + 快速路径双轨
 
-- `engine/rules.ts` 的 `legalMoveResult` 是**语义参考实现**：整盘克隆后落子、提子、验气，
+- `src/engine/rules.ts` 的 `legalMoveResult` 是**语义参考实现**：整盘克隆后落子、提子、验气，
   清晰但开销大，用于对局主流程与测试基准。
-- `engine/fast-rules.ts` 是**热路径专用**的等价实现：扁平 `Uint8Array` 棋盘 +
+- `src/engine/fast-rules.ts` 是**热路径专用**的等价实现：扁平 `Uint8Array` 棋盘 +
   预计算邻居表 + 代数戳（generation stamp）复用缓冲区，合法性探测零分配、
   试错只触碰几个格子并自动还原。
 - `fast-rules.test.ts` 用种子随机局面逐空点断言两套实现完全一致
