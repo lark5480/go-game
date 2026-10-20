@@ -22,6 +22,10 @@
 
 - **唯一允许的包管理器是 pnpm**。
 - 禁止提交 `package-lock.json` / `yarn.lock`、禁止调用 `npm` / `yarn` / `npx`、禁止引导用户执行 `npm install`。
+- **例外（边界，已核实）**：本禁令只管**本仓库的依赖与构建**；部署用的第三方**全局 CLI** 不在其列。
+  README「部署」节的 `npm install -g edgeone` 与上游文档、本机实装一致
+  （`edgeone@1.6.28` 装在 npm 全局 prefix，`pnpm ls -g` 为空）。不要为了"统一包管理器"把它换成
+  `pnpm add -g` 或重装——那条未实测，且 pnpm 全局 bin 需先 `pnpm setup` 写进 PATH，给读者多一个失败点。
 - 安装/构建命令一律使用 README 列出的 `pnpm install` / `pnpm build` / `pnpm exec vitest run`。
 - 若 CI 环境未装 pnpm，**停下问用户**，不要自行换 npm。
 
@@ -59,7 +63,7 @@ Agent **不允许**跳过前两步直接启动"大重构"或"加新功能"。
 
 - `node_modules/`、`dist/`、`*.tsbuildinfo`、`.git/`（除非显式要求）
 - `pnpm-lock.yaml`（除非新增/升级依赖，且必须说明）
-- `eo.log` / `whoami.log`（运行时日志）
+- `*.log`（如部署会话留下的 `eo.log` / `whoami.log`；当前工作树里没有，`.gitignore` 已整体忽略）
 
 ---
 

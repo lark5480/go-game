@@ -57,7 +57,8 @@
 - **是什么**：纯 JS / SVG 棋盘渲染库。
 - **状态**：wgo.js 卡在 `3.0.0-alpha.10`（2021）；glift 的 Travis 徽章已下线；besogo 在 PR 上挂死。
 - **可复用点**：无。三个都已实质停滞。
-- **不接的理由**：本仓库用 Tailwind 自绘 SVG 棋盘（`src/components/Board/GoBoard.tsx`），依赖极简，不引入停滞库。
+- **不接的理由**：本仓库用 Canvas 自绘棋盘（`src/components/Board/GoBoard.tsx`，离屏层缓存木纹/网格/星位 +
+  黑白各一个共享径向渐变），依赖极简，不引入停滞库。
 
 ### 2.5 `SGFC`（WASM）
 - **主页**：https://www.red-bean.com/sgf/sgfc/
